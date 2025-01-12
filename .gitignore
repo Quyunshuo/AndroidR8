@@ -31,3 +31,8 @@ google-services.json
 
 # Android Profiling
 *.hprof
+
+.DS_Store
+/.kotlin/
+/app/release/
+/app/debug/
