@@ -132,7 +132,7 @@ fun Screen(vm: MainVM = viewModel()) {
         }
     }
     if (isShowAddDialog) {
-        Dialog(onDismissRequest = {}) {
+        Dialog(onDismissRequest = { isShowAddDialog = false }) {
 
             var selectMood by remember { mutableStateOf(MoodStatus.NEUTRAL) }
             var influencingEvent by remember { mutableStateOf("") }
