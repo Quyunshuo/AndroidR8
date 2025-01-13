@@ -18,6 +18,7 @@ class MainVM : ViewModel() {
             runCatching {
                 LocalRepo.getAllUserMood()
             }.onSuccess {
+                moodList.clear()
                 moodList.addAll(it)
             }.onFailure {
                 Log.d("QQQ", "syncHistoryRecord: ${it.message}")
