@@ -1,4 +1,5 @@
 # AndroidR8
+
 Android 代码混淆、压缩工具 R8 使用方式及配置
 
 ## D8 dexer 和 R8 shrinker
@@ -46,8 +47,18 @@ android {
     }
 }
 ```
+为了方便测试 R8 功能的效果，我写了个小功能，代码用于做测试，功能如下图所示：
+
+<img src="https://github.com/Quyunshuo/AndroidR8/blob/main/img/img_01.png?raw=true" alt="首页" style="zoom:25%;" /> <img src="https://github.com/Quyunshuo/AndroidR8/blob/main/img/img_02.png?raw=true" alt="弹窗" style="zoom:25%;" />
+
+通过 **gradle task: assembleRelease** 进行一次打包工作，得到一个 apk 文件，我们通过 **jadx** 直接查看该 apk 混淆优化后的源代码，这里我拿 `LocalRepo` 这个类的代码进行对比混淆前后的样子：
+
+<img src="https://github.com/Quyunshuo/AndroidR8/blob/main/img/original_code.png?raw=true" alt="原始代码" style="zoom:25%;" /> <img src="https://github.com/Quyunshuo/AndroidR8/blob/main/img/optimized_code.png?raw=true" alt="优化后的代码" style="zoom:25%;" />
+
+从上图中可以看到，优化后的代码包名、类名、变量名等都被修改为无意义字符，并且 `LocalRepo` 这个类的其他代码也被 R8 进行优化插入到其他位置了。这就是开启混淆压缩后代码的模样，并且我们没有做其他的自定义配置，这是一个默认配置加第三方库的内置混淆规则所产生的一个结果。
 
 ## 资源
 
 [ProGuard manual](https://www.guardsquare.com/manual/configuration/usage)
+
 [Android Developers 缩减、混淆处理和优化应用](https://developer.android.com/build/shrink-code?hl=zh-cn)
