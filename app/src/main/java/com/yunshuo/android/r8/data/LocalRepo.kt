@@ -1,6 +1,7 @@
-package com.yunshuo.android.r8.code
+package com.yunshuo.android.r8.data
 
 object LocalRepo {
+
     val textList = listOf(
         "心如河流，静时清澈，动时汹涌，而爱是那无法停息的源头。",
         "每一颗心都有一条要穿越的河流，彼岸便是灵魂与爱的交汇之地。",
@@ -13,4 +14,25 @@ object LocalRepo {
         "你的笑容如晨曦初升，唤醒了我沉睡的梦境。",
         "我听见你的声音，如同河流听见大海的召唤，无法抗拒，奔赴永恒。"
     )
+
+    /**
+     * 插入情绪状态记录
+     *
+     * @param mood MoodStatus
+     * @param influencingEvent String
+     */
+    suspend fun insertUserMood(mood: MoodStatus, influencingEvent: String = ""): UserMood {
+        val userMood = UserMood(mood = mood, influencingEvent = influencingEvent)
+        userMood.id = DB.INSTANCE.userMoodDao().insertUserMood(userMood)
+        return userMood
+    }
+
+    /**
+     * 获取所有情绪状态记录，按时间降序排序
+     *
+     * @return List<UserMood>
+     */
+    suspend fun getAllUserMood(): List<UserMood> {
+        return DB.INSTANCE.userMoodDao().getAllUserMood()
+    }
 }

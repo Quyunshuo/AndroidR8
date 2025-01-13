@@ -1,4 +1,4 @@
-package com.yunshuo.android.r8.code
+package com.yunshuo.android.r8.data
 
 import androidx.annotation.Keep
 
