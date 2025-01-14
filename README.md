@@ -2,14 +2,16 @@
 
 Android 代码混淆、压缩工具 R8 使用方式及配置
 
-## D8 dexer 和 R8 shrinker
+本文讲解了 Android R8 的功能详细介绍、如何编写混淆规则以及用 demo 进行演示效果。
+
+## 一、D8 dexer 和 R8 shrinker
 
 R8 仓库包含两个工具：
 - D8 是一个 dexer，用于将 Java 字节码转换为 DEX 代码。
 - R8 是一个 Java 程序压缩和混淆工具，用于将 Java 字节码转换为优化后的 DEX 代码。
 D8 是 DX dexer 的替代品，而 R8 是 ProGuard 压缩和混淆工具的替代方案。
 
-## R8 缩减、混淆和优化应用
+## 二、R8 缩减、混淆和优化应用
 
 R8 在编译时为应用进行代码缩减、资源缩减、优化和混淆：
 
@@ -21,7 +23,7 @@ R8 在编译时为应用进行代码缩减、资源缩减、优化和混淆：
 在构建应用的发布版本时，我们可以将 R8 配置为执行上述编译时任务。还可以停用某些任务或通过 ProGuard 规则文件自定义 R8 的行为。事实上，R8 支持所有现有 ProGuard 规则文件，因此在更新 Android Gradle 插件以使用 R8 时，无需更改现有规则。
 使用 Android Studio 3.4 或 Android Gradle 插件 3.4.0 及更高版本时，R8 是默认编译器，用于将项目的 Java 字节码转换为在 Android 平台上运行的 DEX 格式。
 
-## 启用缩减、混淆处理和优化功能
+### 启用缩减、混淆处理和优化功能
 
 模块级别 **build.gradle.kts** 文件 
 
@@ -55,7 +57,192 @@ android {
 
 <img src="https://github.com/Quyunshuo/AndroidR8/blob/main/img/original_code.png?raw=true" alt="原始代码" style="zoom:25%;" /> <img src="https://github.com/Quyunshuo/AndroidR8/blob/main/img/optimized_code.png?raw=true" alt="优化后的代码" style="zoom:25%;" />
 
-从上图中可以看到，优化后的代码包名、类名、变量名等都被修改为无意义字符，并且 `LocalRepo` 这个类的其他代码也被 R8 进行优化插入到其他位置了。这就是开启混淆压缩后代码的模样，并且我们没有做其他的自定义配置，这是一个默认配置加第三方库的内置混淆规则所产生的一个结果。
+从上图中可以看到，优化后的代码包名、类名、变量名等都被修改为无意义字符，并且 `LocalRepo` 这个类的其他代码也被 R8 进行优化插入到其他位置了。这就是开启混淆压缩后代码的模样，并且我们暂时没有做其他的自定义配置。
+
+### R8 配置文件
+
+R8 使用 ProGuard 规则文件来修改其默认行为，并更好地理解应用程序的结构，例如充当应用代码入口点的类。尽管我们可以修改其中的一些规则文件，但某些规则可能由编译时工具（例如 AAPT2）自动生成，或者从应用程序的库依赖中继承。下文描述了 R8 使用的 ProGuard 规则文件的来源、位置以及详细的解读。
+
+- **Android Studio/自定义配置文件：**`<module-dir>/proguard-rules.pro`
+
+  使用 Android Studio 创建新模块时，Android Studio 会在该模块的根目录中创建  `proguard-rules.pro` 文件。默认情况下，该文件内没有任何有效配置。我们在开发时自定义的配置也是写入在该文件中。
+
+- **Android Gradle 插件：**由 Android Gradle 插件在编译时生成
+
+  Android Gradle 插件会生成  `proguard-android-optimize.txt` （其中包含了对大多数 Android 项目都有用的规则），并启用 `@Keep` 注解。默认情况下，使用 Android Studio 创建新模块时，模块级 build 脚本会将此规则文件纳入到发布 build 中，也就是  `getDefaultProguardFile("proguard-android-optimize.txt")`。
+
+- **库依赖项：**AAR： `proguard.txt`、JAR： `META-INF/proguard/<ProGuard-rules-file>`，Android Gradle 插件 3.6 及以上版本还支持针对性的缩减规则。
+
+  AAR 和 JAR 库是可以携带规则文件的，并且将该库作为编译时依赖项纳入到项目中，那么 R8 在编译项目时会自动应用这些规则。例如 [OkHttp](https://square.github.io/okhttp/features/r8_proguard/) 库中就自带了规则文件，我们大多情况下无需针对该库编写规则文件即可让其在 R8 开启下正常进行工作。除了传统的 ProGuard 规则之外，Android Gradle 插件 3.6 或更高版本还支持针对性缩减规则。这些规则针对特定缩减器（R8 或 ProGuard）以及特定缩减器版本。很多库其实都自带了规则文件以保证在 R8 开启下库能够正常进行工作，库的开发者已经为我们进行了适配，保证行为符合预期。另外我们需要注意的是，这些规则文件是累加的，最终打包时会将所有规则文件进行合并，并一起作用与整个打包过程，例如，如果某个库包含停用代码优化的规则，该规则将针对整个项目停用优化，这一点非常重要。合并后的规则文件路径为：`build/outputs/mapping/release/mapping.txt`，下文中会针对该文件及其他文件进行说明。
+
+- **Android 资源打包工具 2 (AAPT2)：** `<module-dir>/build/intermediates/aapt_proguard_file/.../aapt_rules.txt`
+
+  AAPT2 会根据对应用清单中的类、布局及其他应用资源的引用，生成保留规则。例如，AAPT2 会为在应用清单中注册为入口点的每个 activity 添加一个保留规则。
+
+- **其他自定义规则文件：**
+
+  可以通过将其他自定义规则文件添加到模块的 build 脚本的 `proguardFiles` 属性中，添加额外的规则。例如，可以通过在相应的 `productFlavor` 代码块中再添加一个 `proguardFiles` 属性来添加每个 build 变体专用的规则。以下 Gradle 文件会将 `flavor2-rules.pro` 添加到 `flavor2` 产品变种中。现在，`flavor2` 使用全部三个 ProGuard 规则，因为还应用了来自 `release` 代码块的规则。此外，还可以添加 `testProguardFiles` 属性，用于指定仅包含在测试 APK 中的 ProGuard 文件列表：
+
+  ```kotlin
+  android {
+      ...
+      buildTypes {
+          getByName("release") {
+              isMinifyEnabled = true
+              proguardFiles(
+                  getDefaultProguardFile("proguard-android-optimize.txt"),
+                  "proguard-rules.pro"
+              )
+              testProguardFiles(
+                  // 这里列出的 proguard 文件仅用于生成的测试 APK（包含 androidTest 代码和依赖）。
+                	// testProguardFiles 只影响 androidTest，不影响 unitTest。
+                  "test-proguard-rules.pro"
+              )
+          }
+      }
+      flavorDimensions.add("version")
+      productFlavors {
+          create("flavor1") {
+              ...
+          }
+          create("flavor2") {
+              proguardFile("flavor2-rules.pro")
+          }
+      }
+  }
+  ```
+
+  
+
+> [!CAUTION]
+>
+> 我们需要注意的一点是，R8 会将多个来源的规则文件进行合并，其他编译时依赖项（如库依赖项）可能会引入我们不了解的 R8 行为变化。
+
+### 缩减代码
+
+如果将 `minifyEnabled` 属性设为 `true`，系统会默认启用 R8 代码缩减功能。
+
+代码缩减（也称为“摇树优化”）是指移除 R8 确定在运行时不需要的代码的过程。此过程可以大大减小应用的大小，例如，当应用包含许多库依赖项，但只使用它们的一小部分功能时。
+
+为了缩减应用的代码，R8 首先会根据合并后的配置文件集确定应用代码的所有入口点。这些入口点包括 Android 平台可用来打开应用的 activity 或服务的所有类。从每个入口点开始，R8 会检查应用的代码来构建一张图表，列出应用在运行时可能会访问的所有方法、成员变量和其他类。系统会将与该图表没有关联的代码视为执行不到的代码，并可能会从应用中移除该代码。
+
+图 1 显示了一个具有运行时库依赖项的应用。R8 通过检查应用的代码，确定可以从 `MainActivity.class` 入口点执行到的 `foo()`、`faz()` 和 `bar()` 方法。不过，应用从未在运行时使用过 `OkayApi.class` 类或其 `baz()` 方法，因此 R8 会在缩减应用时移除该代码。
+
+![img](https://developer.android.com/static/studio/images/build/r8/tree-shaking.png?hl=zh-cn)R8 通过项目的 R8 配置文件中的 `-keep` 规则确定入口点。也就是说，保留规则指定 R8 在缩减应用时不应舍弃的类，R8 将这些类视为应用的可能入口点。Android Gradle 插件和 AAPT2 会自动生成大多数应用项目（如应用的 activity、视图和服务)所需的保留规则。不过，我们也可以自己添加保留规则，为特定类进行 **Keep**。
+
+#### 自定义要保留的代码
+
+在大多数情况下，如要让 R8 仅移除不使用的代码，使用默认的 ProGuard 规则文件 (`proguard-android-optimize.txt`) 就已足够。不过，在某些情况下，R8 很难做出正确判断，因而可能会移除应用实际上需要的代码。下面列举了几个示例，说明它在什么情况下可能会错误地移除代码：
+
+- 当应用通过 Java 原生接口 (JNI) 调用方法时
+- 当应用在运行时查询代码时（如使用反射）
+
+通过测试应用应该可以发现因错误移除代码而导致的错误，也可以通过生成已移除代码的报告检查移除了哪些代码，在下文中会有详细的解释。
+
+如需修复错误并强制 R8 保留某些代码，请在 ProGuard 规则文件中添加 [`-keep`](https://www.guardsquare.com/en/products/proguard/manual/usage#keepoptions) 代码行。例如：
+
+```
+-keep public class MyClass
+```
+
+或者，也可以为要保留的代码添加 [`@Keep`](https://developer.android.com/reference/androidx/annotation/Keep?hl=zh-cn) 注解。在类上添加 `@Keep` 可按原样保留整个类。在方法或字段上添加该注释，将使该方法/字段（及其名称）以及类名称保持不变。请注意，只有在使用 [AndroidX 注解库](https://developer.android.com/reference/androidx/annotation/package-summary?hl=zh-cn)且添加 Android Gradle 插件随附的 ProGuard 规则文件时，此注解才可用。
+
+### 缩减资源
+
+资源缩减只有在与代码缩减配合使用时才能发挥作用。在代码缩减器移除所有不使用的代码后，资源缩减器便可确定应用仍要使用的资源，当添加包含资源的代码库时尤其如此。必须移除不使用的库代码，使库资源变为未引用资源，因而可由资源缩减器移除。如需启用资源缩减功能，请将 build 脚本中的 `shrinkResources` 属性（若为代码缩减，则还包括 `minifyEnabled`）设为 `true`。
+
+#### 自定义要保留的资源
+
+如果我们有想要保留或舍弃的特定资源，请在项目中创建一个包含 `<resources>` 标记的 XML 文件，并在 `tools:keep` 属性中指定每个要保留的资源，在 `tools:discard` 属性中指定每个要舍弃的资源。这两个属性都接受以逗号分隔的资源名称列表。可以将星号字符用作通配符。
+
+例如：
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@layout/l_used*_c,@layout/l_used_a,@layout/l_used_b*"
+    tools:discard="@layout/unused2" />
+```
+
+将该文件保存在项目资源中，例如，保存在 `res/raw/my.package.keep.xml` 中。构建系统不会将此文件打包到应用中。
+
+> [!CAUTION]
+>
+> 请务必为 `keep` 文件使用唯一名称。否则，当不同的库关联在一起时，其 keep 规则会发生冲突，从而导致被忽略的规则或不需要保留的资源可能出现问题。
+
+指定要舍弃的资源可能看似没有必要，因为我们本可将其删除，但在使用 build 变体时，这样做可能很有用。例如，如果我们知道给定资源似乎在代码中使用（因此不会被缩减器移除），但它实际上不会用于给定 build 变体，则可以将所有资源放入公共项目目录，然后为每个 build 变体创建不同的 `my.package.build.variant.keep.xml` 文件。构建工具也可能会错误地将某个资源标识为必需资源，这是因为编译器会内嵌添加资源 ID，而资源分析器可能不知道真正引用的资源与代码中恰好具有相同值的整数值之间的区别。
+
+#### 启用严格引用检查
+
+通常情况下，资源缩减器可以准确地判断某个资源是否被使用。然而，如果代码调用了 `Resources.getIdentifier()`（或者任何库调用了这个方法，例如 [AppCompat](https://developer.android.com/topic/libraries/support-library/features?hl=zh-cn#v7-appcompat) 库会这样做），这意味着代码正在根据动态生成的字符串查找资源名称。在这种情况下，资源缩减器会默认采取防御性行为，将所有符合匹配名称格式的资源标记为可能已使用，无法移除。
+
+例如，以下代码会将所有带 `img_` 前缀的资源标记为已使用。
+
+```kotlin
+val name = String.format("img_%1d", angle + 1)
+val res = resources.getIdentifier(name, "drawable", packageName)
+```
+
+资源缩减器还会查看代码中的所有字符串常量以及各种 `res/raw/` 资源，以查找格式类似于 `file:///android_res/drawable//ic_plus_anim_016.png` 的资源网址。如果它找到与此类似的字符串，或找到其他看似可用来构建与此类似的网址的字符串，则不会将它们移除。
+
+这些是默认情况下启用的安全缩减模式的示例。不过，我们可以停用这种“防患于未然”的处理方式，指定资源缩减器只保留确定要使用的资源。为此，可以将 `keep.xml` 文件中的 `shrinkMode` 设为 `strict`，如下所示：
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:shrinkMode="strict" />
+```
+
+如果我们确实启用了严格缩减模式，并且代码也通过动态生成的字符串引用资源（如上所示），那么我们必须使用 `tools:keep` 属性手动保留这些资源。
+
+#### 移除未使用的备用资源
+
+Gradle 资源缩减器只会移除未由应用代码引用的资源，这意味着，它不会移除用于不同设备配置的[备用资源](https://developer.android.com/guide/topics/resources/providing-resources?hl=zh-cn#AlternativeResources)。如有必要，可以使用 Android Gradle 插件的 `resConfigs` 属性移除应用不需要的备用资源文件。
+
+例如，如果使用的是包含语言资源的库（如 AppCompat 或 Google Play 服务），那么应用中将包含这些库中消息的所有已翻译语言的字符串，而无论应用的其余部分是否已翻译为相同的语言。如果只想保留应用正式支持的语言，可以使用 `resConfig` 属性指定这些语言。系统会移除未指定语言的所有资源。
+
+以下代码段展示了如何设置只保留英语和法语的语言资源：
+
+```kotlin
+android {
+    defaultConfig {
+        ...
+        resourceConfigurations.addAll(listOf("en", "fr"))
+    }
+}
+```
+
+如果使用 Android App Bundle 格式发布应用，那么在默认情况下，安装该应用时只会下载用户设备上配置的语言的应用版本。同样，下载内容中仅包含与设备的屏幕密度相匹配的资源以及与设备的 ABI 相匹配的原生库。
+
+#### 合并重复资源
+
+默认情况下，Gradle 还会合并同名的资源，如可能位于不同资源文件夹中的同名可绘制对象。这一行为不受 `shrinkResources` 属性控制，也无法停用，因为当多个资源与代码查询的名称匹配时，有必要利用这一行为避免错误。只有在两个或更多个文件具有完全相同的资源名称、类型和限定符时，才会进行资源合并。Gradle 会在重复项中选择它认为最合适的文件（根据下述优先顺序），并且只将这一个资源传递给 AAPT，以便在最终工件中分发。
+
+Gradle 会在以下位置查找重复资源：
+
+- 与主源代码集关联的主资源，一般位于 `src/main/res/` 中。
+- 变体叠加，来自 build 类型和 build 变种。
+- 库项目依赖项。
+
+Gradle 会按以下级联优先顺序合并重复资源：
+
+依赖项 → 主资源 → build 变种 → build 类型
+
+例如，如果某个重复资源同时出现在主资源和 build 变种中，Gradle 会选择 build 变种中的资源。
+
+如果完全相同的资源出现在同一源代码集中，Gradle 无法合并它们，并且会发出资源合并错误。如果在 `build.gradle.kts` 文件的 `sourceSet` 属性中定义了多个源代码集，就可能会发生这种情况。例如，如果 `src/main/res/` 和 `src/main/res2/` 包含完全相同的资源，就可能会发生这种情况。
+
+### 对代码进行混淆处理
+
+
+
+
+
+
+
+
+
+## 三、混淆规则及演示
 
 ## 资源
 
