@@ -234,18 +234,92 @@ Gradle 会按以下级联优先顺序合并重复资源：
 
 ### 对代码进行混淆处理
 
+混淆处理的目的是通过缩短应用的类、方法和字段的名称来缩减应用的大小。下面是使用 R8 进行混淆处理的一个示例：
+
+```kotlin
+androidx.appcompat.app.ActionBarDrawerToggle$DelegateProvider -> a.a.a.b:
+androidx.appcompat.app.AlertController -> androidx.appcompat.app.AlertController:
+    android.content.Context mContext -> a
+    int mListItemLayout -> O
+    int mViewSpacingRight -> l
+    android.widget.Button mButtonNeutral -> w
+    int mMultiChoiceItemLayout -> M
+    boolean mShowTitle -> P
+    int mViewSpacingLeft -> j
+    int mButtonPanelSideLayout -> K
+```
+
+虽然混淆处理不会从应用中移除代码，但如果应用的 DEX 文件将许多类、方法和字段编入索引，那么混淆处理将可以显著缩减应用的大小。不过，由于混淆处理会对代码的不同部分进行重命名，因此在执行某些任务（如检查堆栈轨迹）时需要使用额外的工具。
+
+此外，如果代码依赖于应用的方法和类的可预测命名（例如，使用反射时），应该将相应签名视为入口点并为其指定保留规则，如介绍如何自定义要保留的代码的部分中所述。这些保留规则会告知 R8 不仅要在应用的最终 DEX 中保留该代码，而且还要保留其原始命名。也就是我们经常使用的 **Keep** 手段
+
+### 代码优化
+
+为了进一步优化应用，R8 会在更深的层次上检查代码，以移除更多不使用的代码，或者在可能的情况下重写代码，以使其更简洁。下面是此类优化的几个示例：
+
+- 如果代码从未采用过给定 if/else 语句的 else {} 分支，R8 可能会移除 else {} 分支的代码。
+- 如果代码只在几个位置调用某个方法，R8 可能会移除该方法并将其内嵌在这几个调用点。
+- 如果 R8 确定某个类只有一个唯一子类且该类本身未实例化（例如，一个仅由一个具体实现类使用的抽象基类），它就可以将这两个类组合在一起并从应用中移除一个类。
+
+如需了解详情，请阅读 Jake Wharton 撰写的关于 [R8 优化的博文](https://jakewharton.com/r8-optimization-lambda-groups/)。
+
+R8 不允许停用或启用离散优化，也不允许修改优化的行为。事实上，R8 会忽略试图修改默认优化行为的所有 ProGuard 规则，例如 `-optimizations` 和 `-optimizationpasses`。
+
+> [!CAUTION]
+>
+> 启用优化将更改应用的堆栈轨迹。例如，进行内嵌会移除堆栈帧。
+
+#### 对运行时性能的影响
+
+如果同时启用缩减、混淆和优化，R8 最多可将代码的运行时性能（包括界面线程上的启动时间和帧时间）提升 30%。停用其中任何一项都会大大限制 R8 使用的优化集。
+
+#### 启用增强型优化（这是个很重要的改动）
+
+R8 包含一组额外的优化功能（称为“完整模式”），这使得它的行为与 ProGuard 不同。从 Android Gradle 插件版本 8.0.0 开始，这些优化功能**默认处于启用状态**。开启这个模式可能会导致各种各样的问题，至少在我最早使用的时候遇到过很多的混淆问题，但是后面很多库都进行了适配。
+
+我们可以通过在项目的 `gradle.properties` 文件中添加以下代码来停用这些额外的优化功能：
+
+```properties
+android.enableR8.fullMode=false
+```
+
+这些额外的优化功能会使 R8 的行为与 ProGuard 不同，因此如果我们使用的是专为 ProGuard 设计的规则，则可能需要添加额外的 ProGuard 规则，以避免运行时问题。例如，假设代码通过 Java Reflection API 引用一个类。不使用“完整模式”时，R8 会假设我们打算在运行时检查和操纵该类的对象（即使代码实际上并不这样做），因此它会自动保留该类及其静态初始化程序。不过，使用“完整模式”时，R8 不会做出此假设。如果 R8 断言代码在运行时从未使用该类，则会将该类从应用的最终 DEX 中移除。也就是说，如果想保留类及其静态初始化程序，则需要在规则文件中添加保留规则才能实现这一点。
+
+### 对堆栈轨迹进行轨迹还原
+
+经过 R8 处理的代码会发生各种更改，这可能会使堆栈轨迹更难以理解，因为堆栈轨迹与源代码不完全一致。如果未保留调试信息，就可能会出现行号更改的情况。这可能是由内嵌和轮廓等优化造成的。影响最大的因素是混淆处理；进行混淆处理时，就连类和方法的名称都会更改。
+
+为了还原原始堆栈轨迹，R8 提供了 retrace 命令行工具，该工具与命令行工具软件包捆绑在一起。
+
+如需支持对应用的堆栈轨迹进行轨迹还原，应通过向模块的 `proguard-rules.pro` 文件添加以下规则来确保 build 保留足够的信息以进行轨迹还原：
+
+```proguard
+-keepattributes LineNumberTable,SourceFile
+-renamesourcefileattribute SourceFile
+```
+`LineNumberTable` 属性会在方法中保留位置信息，以便以堆栈轨迹的形式输出这些位置。`SourceFile` 属性可确保所有可能的运行时都实际输出位置信息。`-renamesourcefileattribute` 指令用于将堆栈轨迹中的源文件名称设置为仅包含 `SourceFile`。在轨迹还原过程中不需要实际的原始源文件名称，因为映射文件中包含原始源文件。
+
+R8 每次运行时都会创建一个 `mapping.txt` 文件，其中包含将堆栈轨迹重新映射为原始堆栈轨迹所需的信息。Android Studio 会将该文件保存在 `<module-name>/build/outputs/mapping/<build-type>/` 目录中。
+
+> [!CAUTION]
+>
+> 每次构建项目时都会覆盖 Android Studio 生成的 mapping.txt 文件，因此每次发布新版本时都要注意保存一个该文件的副本。通过为每个发布 build 保留一个 mapping.txt 文件的副本，可以在用户提交来自旧版应用的经过混淆处理的堆栈轨迹时进行轨迹还原。
+
+在 Google Play 上发布应用时，可以上传每个应用版本对应的 `mapping.txt` 文件。使用 **Android App Bundle** 格式发布应用时，系统会自动将此文件包含在 app bundle 内容中。然后，Google Play 会根据用户报告的问题对传入的堆栈轨迹进行轨迹还原，以便开发者可以在 Play 管理中心查看这些堆栈轨迹。
+
+## 三、R8 输出文件解析及用途
+
+在使用 R8 进行代码混淆和优化后，生成的文件位于 `<module-name>/build/outputs/mapping/<build-type>/` 目录下。该目录中包含了一些重要文件，用于调试、错误报告以及了解混淆过程，如下图所示：
 
 
+## 四、混淆规则及演示
 
-
-
-
-
-
-## 三、混淆规则及演示
+## 五、R8 常见问题
 
 ## 资源
 
 [ProGuard manual](https://www.guardsquare.com/manual/configuration/usage)
 
 [Android Developers 缩减、混淆处理和优化应用](https://developer.android.com/build/shrink-code?hl=zh-cn)
+
+[R8 常见问题解答](https://r8.googlesource.com/r8/+/refs/heads/master/compatibility-faq.md)
