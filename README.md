@@ -9,7 +9,7 @@ Android 代码混淆、压缩工具 R8 使用方式及配置
 R8 仓库包含两个工具：
 - D8 是一个 dexer，用于将 Java 字节码转换为 DEX 代码。
 - R8 是一个 Java 程序压缩和混淆工具，用于将 Java 字节码转换为优化后的 DEX 代码。
-D8 是 DX dexer 的替代品，而 R8 是 ProGuard 压缩和混淆工具的替代方案。
+  D8 是 DX dexer 的替代品，而 R8 是 ProGuard 压缩和混淆工具的替代方案。
 
 ## 二、R8 缩减、混淆和优化应用
 
@@ -25,28 +25,28 @@ R8 在编译时为应用进行代码缩减、资源缩减、优化和混淆：
 
 ### 启用缩减、混淆处理和优化功能
 
-模块级别 **build.gradle.kts** 文件 
+模块级别 **build.gradle.kts** 文件
 
 ```kotlin
 android {
-    buildTypes {
-        // 发布环境
-        release {
-            // 仅启用代码缩减、混淆和优化
-            isMinifyEnabled = true
-            // 应用是否可调试
-            isDebuggable = false
-            // 启用资源压缩，由 Android Gradle 插件执行。
-            isShrinkResources = true
+  buildTypes {
+    // 发布环境
+    release {
+      // 仅启用代码缩减、混淆和优化
+      isMinifyEnabled = true
+      // 应用是否可调试
+      isDebuggable = false
+      // 启用资源压缩，由 Android Gradle 插件执行。
+      isShrinkResources = true
 
-            proguardFiles(
-                // 包括与 Android Gradle 插件一起打包的默认 ProGuard 规则文件
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                // 包括本地自定义 Proguard 规则文件
-                "proguard-rules.pro"
-            )
-        }
+      proguardFiles(
+        // 包括与 Android Gradle 插件一起打包的默认 ProGuard 规则文件
+        getDefaultProguardFile("proguard-android-optimize.txt"),
+        // 包括本地自定义 Proguard 规则文件
+        "proguard-rules.pro"
+      )
     }
+  }
 }
 ```
 为了方便测试 R8 功能的效果，我写了个小功能，代码用于做测试，功能如下图所示：
@@ -112,7 +112,7 @@ R8 使用 ProGuard 规则文件来修改其默认行为，并更好地理解应�
   }
   ```
 
-  
+
 
 > [!CAUTION]
 >
@@ -128,7 +128,7 @@ R8 使用 ProGuard 规则文件来修改其默认行为，并更好地理解应�
 
 图 1 显示了一个具有运行时库依赖项的应用。R8 通过检查应用的代码，确定可以从 `MainActivity.class` 入口点执行到的 `foo()`、`faz()` 和 `bar()` 方法。不过，应用从未在运行时使用过 `OkayApi.class` 类或其 `baz()` 方法，因此 R8 会在缩减应用时移除该代码。
 
-![img](https://developer.android.com/static/studio/images/build/r8/tree-shaking.png?hl=zh-cn)R8 通过项目的 R8 配置文件中的 `-keep` 规则确定入口点。也就是说，保留规则指定 R8 在缩减应用时不应舍弃的类，R8 将这些类视为应用的可能入口点。Android Gradle 插件和 AAPT2 会自动生成大多数应用项目（如应用的 activity、视图和服务)所需的保留规则。不过，我们也可以自己添加保留规则，为特定类进行 **Keep**。
+<img src="https://developer.android.com/static/studio/images/build/r8/tree-shaking.png?hl=zh-cn" alt="R8 检查代码使用" style="zoom:30%;" />
 
 #### 自定义要保留的代码
 
@@ -285,7 +285,43 @@ android.enableR8.fullMode=false
 
 这些额外的优化功能会使 R8 的行为与 ProGuard 不同，因此如果我们使用的是专为 ProGuard 设计的规则，则可能需要添加额外的 ProGuard 规则，以避免运行时问题。例如，假设代码通过 Java Reflection API 引用一个类。不使用“完整模式”时，R8 会假设我们打算在运行时检查和操纵该类的对象（即使代码实际上并不这样做），因此它会自动保留该类及其静态初始化程序。不过，使用“完整模式”时，R8 不会做出此假设。如果 R8 断言代码在运行时从未使用该类，则会将该类从应用的最终 DEX 中移除。也就是说，如果想保留类及其静态初始化程序，则需要在规则文件中添加保留规则才能实现这一点。
 
-### 对堆栈轨迹进行轨迹还原
+## 三、R8 输出文件解析及用途
+
+在使用 R8 进行代码混淆和优化后，生成的文件位于 `<module-name>/build/outputs/mapping/<build-type>/` 目录下。该目录中包含了一些重要文件，用于调试、错误报告以及了解混淆过程，如下图所示：
+
+<img src="https://github.com/Quyunshuo/AndroidR8/blob/main/img/mapping_files.png?raw=true" alt="首页" style="zoom:25%;" />
+
+### **1. mapping.txt**
+
+<img src="https://github.com/Quyunshuo/AndroidR8/blob/main/img/mapping.png?raw=true" alt="首页" style="zoom:25%;" />  
+
+该文件是 **混淆映射文件**，记录了原始类、方法和字段名称与混淆后的名称之间的映射关系。可以在崩溃报告中恢复混淆前的堆栈跟踪信息，便于调试。可以通过 **retrace** 工具解析错误日志。需要注意的是如果该文件丢失，无法反混淆崩溃日志，会影响问题定位。
+
+### **2. seeds.txt**
+
+<img src="https://github.com/Quyunshuo/AndroidR8/blob/main/img/seeds.png?raw=true" alt="首页" style="zoom:25%;" />  
+
+记录了 **未被混淆的类和成员**，通常是根据 `-keep` 规则指定的内容。该文件可以用来检查 `-keep` 规则是否正确应用。
+
+### **3. usage.txt**
+
+<img src="https://github.com/Quyunshuo/AndroidR8/blob/main/img/usage.png?raw=true" alt="首页" style="zoom:25%;" />  
+
+列出 **被删除的类、字段和方法**，它是代码裁剪的结果。通过该文件我们可以得知哪些未使用的代码被移除，确认关键代码是否被误删，进而使用 `-keep` 规则保护必要代码。
+
+### **4. configuration.txt**
+
+<img src="https://github.com/Quyunshuo/AndroidR8/blob/main/img/configuration.png?raw=true" alt="首页" style="zoom:25%;" />  
+
+最终生成的配置文件，列出 **R8 在运行时实际使用的所有 ProGuard 规则**。该文件包括用户提供的 `proguard-rules.pro` 文件内容、库依赖文件传递过来的规则，以及编译器生成的规则。我们可以借助该文件确认实际应用的混淆规则，确保自定义规则与默认生成规则符合预期，在混淆出现问题时也可以借助该文件排查导致问题的混淆规则。
+
+### **5. resources.txt**
+
+<img src="https://github.com/Quyunshuo/AndroidR8/blob/main/img/resources.png?raw=true" alt="首页" style="zoom:25%;" />  
+
+列出 **资源裁剪器** 移除和保留的资源项。通过该文件确认哪些文件被移除，或者检查是否有哪些必要文件被误删。
+
+## 四、对堆栈轨迹进行轨迹还原及相关工具
 
 经过 R8 处理的代码会发生各种更改，这可能会使堆栈轨迹更难以理解，因为堆栈轨迹与源代码不完全一致。如果未保留调试信息，就可能会出现行号更改的情况。这可能是由内嵌和轮廓等优化造成的。影响最大的因素是混淆处理；进行混淆处理时，就连类和方法的名称都会更改。
 
@@ -297,6 +333,7 @@ android.enableR8.fullMode=false
 -keepattributes LineNumberTable,SourceFile
 -renamesourcefileattribute SourceFile
 ```
+
 `LineNumberTable` 属性会在方法中保留位置信息，以便以堆栈轨迹的形式输出这些位置。`SourceFile` 属性可确保所有可能的运行时都实际输出位置信息。`-renamesourcefileattribute` 指令用于将堆栈轨迹中的源文件名称设置为仅包含 `SourceFile`。在轨迹还原过程中不需要实际的原始源文件名称，因为映射文件中包含原始源文件。
 
 R8 每次运行时都会创建一个 `mapping.txt` 文件，其中包含将堆栈轨迹重新映射为原始堆栈轨迹所需的信息。Android Studio 会将该文件保存在 `<module-name>/build/outputs/mapping/<build-type>/` 目录中。
@@ -305,16 +342,29 @@ R8 每次运行时都会创建一个 `mapping.txt` 文件，其中包含将堆�
 >
 > 每次构建项目时都会覆盖 Android Studio 生成的 mapping.txt 文件，因此每次发布新版本时都要注意保存一个该文件的副本。通过为每个发布 build 保留一个 mapping.txt 文件的副本，可以在用户提交来自旧版应用的经过混淆处理的堆栈轨迹时进行轨迹还原。
 
-在 Google Play 上发布应用时，可以上传每个应用版本对应的 `mapping.txt` 文件。使用 **Android App Bundle** 格式发布应用时，系统会自动将此文件包含在 app bundle 内容中。然后，Google Play 会根据用户报告的问题对传入的堆栈轨迹进行轨迹还原，以便开发者可以在 Play 管理中心查看这些堆栈轨迹。
+在 Google Play 上发布应用时，可以上传每个应用版本对应的 `mapping.txt` 文件。使用 **Android App Bundle** 格式发布应用时，系统会自动将此文件包含在 app bundle 内容中。然后，Google Play 会根据用户报告的问题对传入的堆栈轨迹进行轨迹还原，以便开发者可以在 Play 管理中心查看这些堆栈轨迹。在其他很多平台中都是支持上传 `mapping.txt` 进行还原堆栈信息的，这里不再进行展开。
 
-## 三、R8 输出文件解析及用途
+#### R8 retrace
 
-在使用 R8 进行代码混淆和优化后，生成的文件位于 `<module-name>/build/outputs/mapping/<build-type>/` 目录下。该目录中包含了一些重要文件，用于调试、错误报告以及了解混淆过程，如下图所示：
+R8 retrace 这款工具用于从经过混淆处理的堆栈轨迹获取原始堆栈轨迹。系统会通过在映射文件中对类名和方法名与其原始定义进行匹配来重构堆栈轨迹。该工具需要进行下载，在 SDK 管理器更新工具 - Android SDK Command-line Tools  可以进行下载：
 
+<img src="https://github.com/Quyunshuo/AndroidR8/blob/main/img/command_line_tools.png?raw=true" alt="首页" style="zoom:25%;" />  
 
-## 四、混淆规则及演示
+该工具位于 `Android SDK目录/cmdline-tools/latest/bin` 中，使用方式：
 
-## 五、R8 常见问题
+```shell
+retrace  path-to-mapping-file [path-to-stack-trace-file] [options]
+```
+
+下图中是我手动抛出一个异常，原始堆栈信息在 `log.txt` 文件中，还原后的堆栈信息在控制台进行输出，我是用的是 **MacOS**：
+
+<img src="https://github.com/Quyunshuo/AndroidR8/blob/main/img/retrace_log.png?raw=true" alt="首页" style="zoom:25%;" />  
+
+记得我之前在使用 **Windows** 时用过一个自带的可视化工具更为方便，但是我现在找不到了... 等我后续找到后继续更新到这里。
+
+## 五、混淆规则及演示
+
+## 六、R8 常见问题
 
 ## 资源
 
