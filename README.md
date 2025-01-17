@@ -321,7 +321,7 @@ android.enableR8.fullMode=false
 
 列出 **资源裁剪器** 移除和保留的资源项。通过该文件确认哪些文件被移除，或者检查是否有哪些必要文件被误删。
 
-## 四、对堆栈轨迹进行轨迹还原及相关工具
+## 四、对堆栈轨迹进行还原及相关工具
 
 经过 R8 处理的代码会发生各种更改，这可能会使堆栈轨迹更难以理解，因为堆栈轨迹与源代码不完全一致。如果未保留调试信息，就可能会出现行号更改的情况。这可能是由内嵌和轮廓等优化造成的。影响最大的因素是混淆处理；进行混淆处理时，就连类和方法的名称都会更改。
 
@@ -363,6 +363,32 @@ retrace  path-to-mapping-file [path-to-stack-trace-file] [options]
 记得我之前在使用 **Windows** 时用过一个自带的可视化工具更为方便，但是我现在找不到了... 等我后续找到后继续更新到这里。
 
 ## 五、混淆规则及演示
+
+在拆解具体的规则前，我门需要了解 R8 的工作原理。
+
+- 入口点
+
+  为了确定哪些代码需要保留，哪些代码可以丢弃或混淆，必须指定一个或多个入口点。这些入口点在 Android 中通常是一些核心组件类，比如 activity、Service 等。在压缩步骤中，R8 从这些入口点开始，递归地确定哪些类和类成员被使用。所有其他类和类成员将被丢弃。在优化步骤中，R8 进一步优化代码。除了其他优化外，非入口点的类和方法可以被修改为 private、static 或 final，未使用的参数可以被移除，某些方法可能会被内联。在混淆步骤中，R8 会重命名非入口点的类和类成员。在整个过程中，保留入口点可确保它们仍然可以通过原始名称访问。
+
+- **反射**
+
+  反射和自省（introspection）为任何自动化代码处理带来了特殊问题。在 R8 中，你的代码中通过反射动态创建或调用的类或类成员（即通过名称）也必须被指定为入口点。例如，Class.forName() 构造函数可能会在运行时引用任何类。由于类名可能是从配置文件中读取的，因此通常无法计算哪些类必须保留（并保留原始名称）。因此，你必须在配置中指定这些类，使用简单的 `-keep` 选项，或者是使用 `@Keep` 注解。
+
+  然而，ProGuard 已经为你检测并处理了以下情况：
+
+  - Class.forName("SomeClass")
+  - SomeClass.class
+  - SomeClass.class.getField("someField")
+  - SomeClass.class.getDeclaredField("someField")
+  - SomeClass.class.getMethod("someMethod", null)
+  - SomeClass.class.getMethod("someMethod", new Class[] { A.class,... })
+  - SomeClass.class.getDeclaredMethod("someMethod", null)
+  - SomeClass.class.getDeclaredMethod("someMethod", new Class[] { A.class,... })
+  - AtomicIntegerFieldUpdater.newUpdater(SomeClass.class, "someField")
+  - AtomicLongFieldUpdater.newUpdater(SomeClass.class, "someField")
+  - AtomicReferenceFieldUpdater.newUpdater(SomeClass.class, SomeType.class, "someField")
+
+  当然，类名和类成员的名称可能不同，但对于 R8 识别这些构造函数，语法必须完全相同。所引用的类和类成员将在压缩阶段保留，字符串参数将在混淆阶段被正确更新。
 
 ## 六、R8 常见问题
 
